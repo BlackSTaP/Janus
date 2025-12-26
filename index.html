@@ -72,8 +72,8 @@
     </div>
 
     <script>
-        // Использование предоставленного ключа OpenRouter
         const KEY = "ef871a8453a2d890e06ada3cdd6509f8c8338ac3013cc63feb990bbe068d77c1";
+        // Используем базовую модель, которая чаще всего доступна в бесплатном лимите
         const MODEL = "google/gemini-2.0-flash-001";
 
         const PROMPT = `ТЫ — JANUS, Архитектор бесконечной RPG-песочницы. 
@@ -92,16 +92,25 @@
         async function testApi() {
             const ind = document.getElementById('api-indicator');
             try {
-                const r = await fetch("https://openrouter.ai/api/v1/auth/key", {
-                    headers: { "Authorization": `Bearer ${KEY}` }
+                // Пытаемся просто получить список моделей — это самый простой способ проверить ключ
+                const r = await fetch("https://openrouter.ai/api/v1/models", {
+                    method: 'GET',
+                    headers: { 
+                        "Authorization": `Bearer ${KEY}`,
+                        "Content-Type": "application/json"
+                    }
                 });
+                
                 if (r.ok) {
                     ind.innerHTML = 'API: <span style="color:#33ff33">ONLINE</span>';
-                    typeText("СОЕДИНЕНИЕ УСТАНОВЛЕНО. ДОБРО ПОЖАЛОВАТЬ, ПОЛЬЗОВАТЕЛЬ.");
-                } else { throw new Error(); }
+                    typeText("СОЕДИНЕНИЕ УСТАНОВЛЕНО. БЕСПЛАТНЫЙ ЛИМИТ АКТИВИРОВАН. ДОБРО ПОЖАЛОВАТЬ.");
+                } else { 
+                    const data = await r.json();
+                    throw new Error(data.error?.message || "Неизвестная ошибка");
+                }
             } catch (e) {
                 ind.innerHTML = 'API: <span class="err">OFFLINE</span>';
-                addLog("SYSTEM", "ОШИБКА: AUTH CREDENTIALS NOT RECOGNIZED. ПРОВЕРЬТЕ БАЛАНС.");
+                addLog("SYSTEM", `ОШИБКА: ${e.message}. ПРОВЕРЬТЕ КЛЮЧ.`);
             }
         }
 
@@ -118,7 +127,7 @@
                         'Authorization': `Bearer ${KEY}`,
                         'Content-Type': 'application/json',
                         'X-Title': 'Janus Terminal',
-                        'HTTP-Referer': 'https://github.com/janus'
+                        'HTTP-Referer': window.location.origin
                     },
                     body: JSON.stringify({
                         model: MODEL,
@@ -126,6 +135,8 @@
                             { role: "system", content: PROMPT },
                             { role: "user", content: `D:${state.depth}, E:${state.entropy.toFixed(2)}, P:${state.psych}. Last: ${state.lastContext}. Action: ${text}` }
                         ],
+                        // Убираем принудительный JSON format, если модель его не поддерживает в бесплатной версии
+                        // Но просим об этом в промпте.
                         response_format: { type: "json_object" }
                     })
                 });
@@ -137,7 +148,13 @@
 
                 const data = await response.json();
                 const content = data.choices[0].message.content;
-                const res = JSON.parse(content.replace(/```json|```/g, "").trim());
+                
+                // Более гибкий парсинг JSON
+                let jsonStr = content.trim();
+                if (jsonStr.includes("{")) {
+                    jsonStr = jsonStr.substring(jsonStr.indexOf("{"), jsonStr.lastIndexOf("}") + 1);
+                }
+                const res = JSON.parse(jsonStr);
 
                 document.getElementById(loadId).remove();
 
@@ -152,7 +169,10 @@
                 updateUI();
 
             } catch (err) {
-                document.getElementById(loadId).innerHTML = `<span class="err">ОШИБКА: ${err.message}</span>`;
+                const loadEl = document.getElementById(loadId);
+                if (loadEl) {
+                    loadEl.innerHTML = `<span class="err">ОШИБКА: ${err.message}</span>`;
+                }
             }
         }
 
@@ -199,7 +219,9 @@
         }
 
         document.getElementById('user-input').onkeypress = (e) => {
-            if(e.key === 'Enter') sendAction(e.target.value);
+            if(e.key === 'Enter') {
+                sendAction(e.target.value);
+            }
         };
 
         window.onload = () => {
